@@ -17,6 +17,10 @@ IMAP/SMTP.
 State lives in two volumes: `/root` (vault, keyring, password-store) and
 `/certs` (TLS cert + key).
 
+A `compose.yaml` is included for running the Bridge as a daemon; it reuses the
+existing named volumes (declared `external`), so it can take over from a
+container previously started with `docker run` without losing the session.
+
 ## Usage
 
 Build:
@@ -36,7 +40,18 @@ docker run --rm -it \
   proton-bridge
 ```
 
-Run as daemon:
+Run as daemon (Compose, recommended):
+
+```sh
+docker compose up -d
+```
+
+The provided `compose.yaml` expects the `proton-bridge-data` and
+`proton-bridge-certs` volumes to already exist (they are created by the
+one-time setup above). If a container named `proton-bridge` from a previous
+`docker run` is still around, remove it first: `docker rm -f proton-bridge`.
+
+Equivalent plain `docker run`:
 
 ```sh
 docker run -d --name proton-bridge \

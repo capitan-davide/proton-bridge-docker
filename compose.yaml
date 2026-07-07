@@ -1,0 +1,27 @@
+services:
+  proton-bridge:
+    container_name: proton-bridge
+    image: proton-bridge:latest
+    restart: unless-stopped
+    environment:
+      # LAN IP of the Docker host: added as a SAN to the self-signed TLS cert
+      # generated on first run, so clients connecting to <host-ip>:1143/1025
+      # with STARTTLS can validate it. Defaults to 127.0.0.1 (the usual case
+      # of the Bridge running on the same machine as the mail client); here it
+      # must be the router's LAN IP since clients connect over the network.
+      # Only read on first run (cert generation); changing it later has no
+      # effect unless the cert in /certs is regenerated.
+      BRIDGE_LAN_IP: "192.168.2.1"
+    ports:
+      - "1143:143"   # IMAP
+      - "1025:25"    # SMTP
+    volumes:
+      - proton-bridge-certs:/certs
+      - proton-bridge-data:/root
+    network_mode: bridge
+
+volumes:
+  proton-bridge-certs:
+    external: true    # reuse the EXISTING volume — do not let compose create a new one
+  proton-bridge-data:
+    external: true    # reuse the EXISTING volume — do not let compose create a new one
