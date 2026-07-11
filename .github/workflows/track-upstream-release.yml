@@ -1,0 +1,92 @@
+name: Track proton-bridge upstream release
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # daily at 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  check-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest upstream release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(curl -sfL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/ProtonMail/proton-bridge/releases/latest | jq -r .tag_name)
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "Failed to resolve latest upstream release" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Get current version
+        id: current
+        run: |
+          VERSION=$(grep -m1 '^ARG BRIDGE_VERSION=' Dockerfile | cut -d'=' -f2 | tr -d ' ')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if update needed
+        id: diff
+        run: |
+          if [ "${{ steps.upstream.outputs.version }}" != "${{ steps.current.outputs.version }}" ] \
+             && ! git rev-parse "${{ steps.upstream.outputs.tag }}" >/dev/null 2>&1; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update Dockerfile
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          sed -i "s/^ARG BRIDGE_VERSION=.*/ARG BRIDGE_VERSION=${{ steps.upstream.outputs.version }}/" Dockerfile
+
+      - name: Commit and tag
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Dockerfile
+          git commit -m "Update proton-bridge to ${{ steps.upstream.outputs.tag }}"
+          git tag "${{ steps.upstream.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ steps.upstream.outputs.tag }}"
+
+      - name: Set up QEMU
+        if: steps.diff.outputs.changed == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.diff.outputs.changed == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: steps.diff.outputs.changed == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        if: steps.diff.outputs.changed == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            BRIDGE_VERSION=${{ steps.upstream.outputs.version }}
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/proton-bridge:${{ steps.upstream.outputs.version }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/proton-bridge:latest
