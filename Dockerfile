@@ -1,6 +1,6 @@
 FROM alpine:3.24 AS build
 
-ARG BRIDGE_VERSION=3.27.0
+ARG BRIDGE_VERSION=3.27.1
 
 RUN apk add --no-cache bash binutils go make pkgconf libcbor-dev libfido2-dev libsecret-dev
 
